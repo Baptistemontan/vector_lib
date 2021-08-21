@@ -94,7 +94,7 @@
         return _value; \
     }
 
-// remove an element at the given index
+// remove an element at the given index and return it
 // need the array pointer as parameter, not the array itself
 #define VEC_DEF_REMOVE(type, suffix) \
     inline type vec_remove_##suffix(type** _vecPtr, size_t _index) { \
