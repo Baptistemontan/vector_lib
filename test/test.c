@@ -6,7 +6,14 @@
 typedef int (*subtest_func_t)(size_t);
 typedef size_t (*test_func_t)(size_t, size_t*);
 
+typedef struct {
+    int a;
+    float b;
+    char c;
+} test_struct_t;
+
 VEC_DEF_ALL(int, int)
+VEC_DEF_ALL(test_struct_t, test_struct)
 
 #define PUSH_CASE 2
 
@@ -18,6 +25,7 @@ void test_all(void)
         test_vec_push_front,
         test_vec_pop_back,
         test_vec_pop_front,
+        test_vec_customStruct
     };
     size_t test_size = sizeof(test_funcs) / sizeof(test_funcs[0]);
     size_t passed = 0;
@@ -219,6 +227,39 @@ size_t test_vec_pop_front(size_t testSize, size_t *testCase)
     };
     *testCase = sizeof(tests) / sizeof(subtest_func_t);
     printf("\n\nTESTING vec_popFront()\n\n");
+    return test_func(tests, *testCase, testSize);
+}
+
+static int test_vec_customStruct_1(size_t testSize) {
+    test_struct_t* v = vec_create_test_struct(0);
+    test_struct_t testStruct;
+    testStruct.c = 'a';
+
+    for(int i = 0; i < testSize; i++) {
+        testStruct.a = i;
+        testStruct.b = i * 2.0;
+        vec_pushBack_test_struct(&v, testStruct);
+    }
+    int res = 1;
+    for(int i = 0; i < testSize; i++) {
+        testStruct = vec_popFront_test_struct(&v);
+        // printf("%d %f %c\n", testStruct.a, testStruct.b, testStruct.c);
+        if(testStruct.a != i || testStruct.b != (float)(i * 2.0) || testStruct.c != 'a') {
+            res = 0;
+            break;
+        }
+    }
+    vec_free(v);
+    return res;
+}
+
+size_t test_vec_customStruct(size_t testSize, size_t *testCase)
+{
+    subtest_func_t tests[] = {
+        test_vec_customStruct_1
+    };
+    *testCase = sizeof(tests) / sizeof(subtest_func_t);
+    printf("\n\nTESTING vec with customs types\n\n");
     return test_func(tests, *testCase, testSize);
 }
 
