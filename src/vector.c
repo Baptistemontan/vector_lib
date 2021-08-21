@@ -3,8 +3,80 @@
 #include <string.h>
 #include <stdio.h>
 
-#define SHIFT(n) (1 << n) // fast 2^n
-#define LOG2(X) ((unsigned) (8*sizeof (unsigned long long) - __builtin_clzll((X)) - 1)) // this come from stackoverflow, I don't know how it works, but it works
+/**
+ * 
+ * TLDR: I'm doing black magic in C, and it work better than it should.
+ * 
+ * 
+ * I will try to explain the inner workings of this code, which is pure black magic,
+ * and will surely make some people mad.
+ * (first thing, the struct vec_t contain the infos about the vector.)
+ * When I tried to design this lib for the first time, 
+ * I gave back the struct to the user and he add to access an array in the struct
+ * But it was not practical, and I wanted to just do vec[i] = x, and not vec.arr[i] = x
+ * so I gave back the array to the user and he can access it with the [] operator.
+ * but now, how do I access the info when the user want to push item or the size?
+ * well at first I've done the most stupid things that came to my mind, 
+ * I just created an array that store the infos of all the current vec, 
+ * and do a bsearch when I need to access the info of a vec.
+ * so as you can imagine, I need to sort the array everytime the vec address change,
+ * so most of the workload was sorting and searching in an array.
+ * but now, I use some address pointers tricks to make it more efficient.
+ * when I allocate the memory for the array, I also allocate the size of an address to the struct vec_t
+ * so instead of allocating size * memSize, I allocate size * memSize + sizeof(vec_t*)
+ * and I give back the address, but shifted of sizeof(vec_t*)
+ * so when the user use functions on the vector, I just shift it back to retrieve the address
+ * (see macro vec_getInfo(vec))
+ * I don't know if its the best, if it's really safe, but it works, and it's fast, 
+ * and it's very convenient, for the user and for me.
+ * 
+ * user could use the "privates" functions of the library, but the prefered way is to define wrapper functions.
+ * macros to define them are defines in the header file.
+ * most of the functions are inlined so it does'nt create actual functions, and can be defined in multiple files
+ * without creating the same function multiple times, 
+ * and the compiler can optimize them as they are very small wrappers.
+ * 
+ * An other thing, I'm not an expert in dynammic arrays, so I just implemented
+ * a logic I came accross one time, and I've done it the way that seams the best for me.
+ * in vect_t, the property baseSize is an power of 2 of the actual size of the array,
+ * so the array size is 2^(baseSize)
+ * yes this means that there is unused memory in the array, but this make insertion and deletion
+ * fast as they are now O(log(n)) instead of O(n))
+ * (I speak in term of reallocation, which mean copying the array, only log2(n) times instead of n times)
+ * I also heard about the fact that computer likes to always be propare that functions are gonna be call multiple
+ * so when the user push to the front, if their is no space at the front, I move the array to the back,
+ * not just of one element, but of the whole array.
+ * I do the smae thing when the user push to the back, I just move the array to the front, setting the offset to 0.
+ * This whole logic is done in vec_expand() and vec_shrink(), which are just wrappers for vec_resize().
+ * no other functions than vec_resize() should resize, only move memory.
+ * all function that insert element in the vector call vec_expand(),
+ * and all function that remove element from the vector call vec_shrink().
+ * this insure that the array is always in the right size.
+ * the only function that can oversize the array is vec_reserve() (which is also a wrapper for vec_resize())
+ * 
+ * some macro are defined to access part of the array, see vec_: front, back, index, indexFromBack
+ * defined to make the code more readeable when moving memory around.
+ * 
+ * functions that intend to modify the vec size take the vec address as first argument,
+ * that way the memory address of the arr can be replaced by the new one if the array is resized.
+ * so all these function finish by *vecPtr = vec_front(vecInfo)
+ * 
+ * 
+ * I hope the code is not too hard to understand, I try to keep it as clean as possible,
+ * but this is difficult has it's mostly memory movement.
+ * this lib is just me tweaking around in C to improve myself,
+ * I'm sure most of the functions could be written in a better way and more optimized,
+ * If you see any improvement, please let me know.
+ * 
+ * Thanks for reading,
+ * have a nice day,
+ * Baptiste de Montangon.
+ */
+
+#define SHIFT(n) ((size_t)1 << n) // fast 2^n
+// this come from stackoverflow, I don't know how it works, but it works
+// don't give 0 to it, it'll return nonsense.
+#define LOG2(X) ((unsigned) (8*sizeof (unsigned long long) - __builtin_clzll((X)) - 1)) 
 #define vec_getInfo(vec) (*(vec_t**)((vec) - sizeof(vec_t*)))
 #define vec_front(vec) ((vec)->baseArr + ((vec)->offset * (vec)->memSize))
 #define vec_back(vec) ((vec)->baseArr + (((vec)->offset + (vec)->size) * (vec)->memSize))
@@ -67,7 +139,7 @@ static void vec_extend(vec_t* vec) {
     vec_resize(vec, newBaseSize);
 }
 
-static void vec_reduce(vec_t* vec) {
+static void vec_shrink(vec_t* vec) {
     if(vec->baseSize == 0) return;
     if(vec->size * 2 > SHIFT(vec->baseSize)) return;
     size_t newBaseSize = vec->baseSize - 1;
@@ -140,7 +212,7 @@ static void vec_popBack(vec_t*__restrict__ vec, void*__restrict__ buff) {
     if(vec->size == 0) return;
     if(buff != NULL) memcpy(buff, vec_indexFromBack(vec, 1), vec->memSize);
     vec->size--;
-    vec_reduce(vec);
+    vec_shrink(vec);
 }
 
 void _vec_priv_popBack(void** vecPtr, void* buff) {
@@ -157,7 +229,7 @@ static void vec_popFront(vec_t* vec, void*__restrict__ buff) {
     vec->size--;
     vec->offset++;
     memcpy(vec_front(vec) - sizeof(vec_t*), &vec, sizeof(vec_t*));
-    vec_reduce(vec);
+    vec_shrink(vec);
 }
 
 void _vec_priv_popFront(void** vecPtr, void* buff) {
@@ -216,7 +288,7 @@ void _vec_priv_remove(void** vecPtr, size_t index, void*__restrict__ buff) {
     // need memmove here because everything is moved over itself by one element
     memmove(vec_index(vecInfo, index), vec_index(vecInfo, index + 1), (vecInfo->size - index - 1) * vecInfo->memSize);
     vecInfo->size--;
-    vec_reduce(vecInfo);
+    vec_shrink(vecInfo);
     *vecPtr = vec_front(vecInfo);
 }
 
@@ -268,7 +340,7 @@ void _vec_debug_print(void* vec, FILE* stream) {
     fprintf(stream, "effective memsize: %lu\n", SHIFT(vecInfo->baseSize) * vecInfo->memSize + sizeof(vec_t) + sizeof(vec_t*));
 }
 
-static void vec_preReserve(vec_t* vec, size_t newSize) {
+static void vec_reserve(vec_t* vec, size_t newSize) {
     if(newSize <= vec->baseSize) return;
     size_t newBaseSize = LOG2(newSize ? newSize : 1) + 1;
     if(newBaseSize > vec->baseSize) {
@@ -280,7 +352,7 @@ static void vec_preReserve(vec_t* vec, size_t newSize) {
 void vec_allocate(void* vecPtr, size_t newSize, int resize) {
     if(vecPtr == NULL || *(void**)vecPtr == NULL) return;
     vec_t* vecInfo = vec_getInfo(*(void**)vecPtr);
-    vec_preReserve(vecInfo, newSize);
+    vec_reserve(vecInfo, newSize);
     if(resize) vecInfo->size = newSize;
     *(void**)vecPtr = vec_front(vecInfo);
 }
