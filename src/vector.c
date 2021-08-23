@@ -75,6 +75,8 @@
 
 #define SHIFT(n) ((size_t)1 << n) // fast 2^n
 // this come from stackoverflow, I don't know how it works, but it works
+// carefull, return the biggest power of 2 that is smaller than n, 
+// so need to add 1 to have the smallest power of 2 larger than n
 // don't give 0 to it, it'll return nonsense.
 #define LOG2(X) ((unsigned) (8*sizeof (unsigned long long) - __builtin_clzll((X)) - 1)) 
 #define vec_getInfo(vec) (*(vec_t**)((vec) - sizeof(vec_t*)))
@@ -106,6 +108,7 @@ static vec_t* vec_init(size_t memSize, size_t size) {
         return NULL;
     }
     vec->size = size;
+    // calculate the smallest power of 2 that is bigger than the size
     vec->baseSize = LOG2(size ? size : 1) + 1;
     void* baseArr = allocator((memSize * SHIFT(vec->baseSize)) + sizeof(vec_t*));
     if(baseArr == NULL) {
@@ -121,6 +124,8 @@ static vec_t* vec_init(size_t memSize, size_t size) {
     return vec;
 }
 
+// resize the array to the new baseSize and copy the old array to the new one
+// reset offset to 0
 static void vec_resize(vec_t* vec, size_t newBaseSize) {
     void* newArr = allocator(vec->memSize * SHIFT(newBaseSize) + sizeof(vec_t*));
     if(newArr == NULL) {
@@ -135,12 +140,16 @@ static void vec_resize(vec_t* vec, size_t newBaseSize) {
     vec->offset = 0;
 }
 
+// check if the array need to be expanded,
+// if so, double its size
 static void vec_extend(vec_t* vec) {
     if(vec->size + vec->offset < SHIFT(vec->baseSize)) return;
     size_t newBaseSize = vec->baseSize + 1;
     vec_resize(vec, newBaseSize);
 }
 
+// check if the array need to be shrinked,
+// if so, halve its size
 static void vec_shrink(vec_t* vec) {
     if(vec->baseSize == 0) return;
     if(vec->size * 2 > SHIFT(vec->baseSize)) return;
@@ -148,6 +157,7 @@ static void vec_shrink(vec_t* vec) {
     vec_resize(vec, newBaseSize);
 }
 
+// create a new vector of default size size and with a size of elements of memeSize
 void* vec_create(size_t memSize, size_t size) {
     if(memSize == 0) return NULL;
     vec_t* darr = vec_init(memSize, size);
@@ -155,7 +165,8 @@ void* vec_create(size_t memSize, size_t size) {
     return darr->baseArr;
 }
 
-static void vec_pushBack(vec_t*__restrict__ vec, void*__restrict__ value) {
+// push an element at the end of the vector
+static void vec_pushBack(vec_t* vec, void* value) {
     vec_extend(vec);
     memcpy(vec_back(vec), value, vec->memSize);
     vec->size++;
@@ -168,7 +179,8 @@ void _vec_priv_pushBack(void** vecPtr, void* value) {
     *vecPtr = vec_front(vecInfo);
 }
 
-static void vec_pushFront(vec_t* vec, void*__restrict__ value) {
+// push an element at the front of the vector
+static void vec_pushFront(vec_t* vec, void* value) {
     if(vec->offset > 0) {
         vec->offset--;
         vec->size++;
@@ -196,12 +208,14 @@ void _vec_priv_pushFront(void** vecPtr, void* value) {
     *vecPtr = vec_front(vecInfo);
 }
 
+// resturn the size of the vector
 size_t vec_size(const void* vec) {
     if(vec == NULL) return 0;
     const vec_t* vecInfo = vec_getInfo(vec);
     return vecInfo->size;
 }
 
+// free the vector
 void vec_free(void* vec) {
     if(vec == NULL) return;
     vec_t* arrInfo = *(vec_t**)(vec - sizeof(vec_t*));
@@ -209,8 +223,9 @@ void vec_free(void* vec) {
     deallocator(arrInfo);
 }
 
-
-static void vec_popBack(vec_t*__restrict__ vec, void*__restrict__ buff) {
+// store the last element in buff and remove it from the vector
+// if buff is NULL, the element is just deleted
+static void vec_popBack(vec_t* vec, void* buff) {
     if(vec->size == 0) return;
     if(buff != NULL) memcpy(buff, vec_indexFromBack(vec, 1), vec->memSize);
     vec->size--;
@@ -225,7 +240,9 @@ void _vec_priv_popBack(void** vecPtr, void* buff) {
     *vecPtr = vec_front(vecInfo);
 }
 
-static void vec_popFront(vec_t* vec, void*__restrict__ buff) {
+// store the first element in buff and remove it from the vector
+// if buff is NULL, the element is just deleted
+static void vec_popFront(vec_t* vec, void* buff) {
     if(vec->size == 0) return;
     if(buff != NULL) memcpy(buff, vec->baseArr + vec->offset * vec->memSize, vec->memSize);
     vec->size--;
@@ -242,6 +259,7 @@ void _vec_priv_popFront(void** vecPtr, void* buff) {
     *vecPtr = vec_front(vecInfo);
 }
 
+// sort the vector using the given comparator
 void vec_sort(void* vec) {
     if(vec == NULL) return;
     vec_t* vecInfo = vec_getInfo(vec);
@@ -252,22 +270,29 @@ void vec_sort(void* vec) {
     qsort(vec_front(vecInfo), vecInfo->size, vecInfo->memSize, vecInfo->cmp);
 }
 
+// sort the vector using the comparator given as argument
 void vec_qsort(void* vec, int (*compar_fn) (const void *, const void *)) {
     if(vec == NULL) return;
     vec_t* vecInfo = vec_getInfo(vec);
-    qsort(vec, vecInfo->size, vecInfo->memSize, compar_fn);
+    qsort(vec_front(vecInfo), vecInfo->size, vecInfo->memSize, compar_fn);
 }
 
+// return a new array containing the elements beetween start and end, end excluded
 void* _vec_priv_slice(void* vec, size_t start, size_t end) {
     if(vec == NULL) return NULL;
     vec_t* vecInfo = vec_getInfo(vec);
+    // if start is out of bounds return empty array
     if(start >= vecInfo->size) return vec_create(vecInfo->memSize, 0);
+    // if end is out of bounds set it to the end of the array
     if(end > vecInfo->size) end = vecInfo->size;
+    // just create a new array with the right size
     void* newArr = vec_create(vecInfo->memSize, end - start);
+    // and copy the values
     memcpy(newArr, vec_index(vecInfo, start), (end - start) * vecInfo->memSize);
     return newArr;
 }
 
+// insert an element at the given index
 static void vec_insert(vec_t* vecInfo, size_t index, void* value) {
     if(index > vecInfo->size) return;
     // if index is at the end, just pushBack
@@ -305,7 +330,7 @@ void _vec_priv_insert(void** vecPtr, size_t index, void* value) {
     *vecPtr = vec_front(vecInfo);
 }
 
-void _vec_priv_remove(void** vecPtr, size_t index, void*__restrict__ buff) {
+void _vec_priv_remove(void** vecPtr, size_t index, void* buff) {
     if(vecPtr == NULL || *vecPtr == NULL) return;
     vec_t* vecInfo = vec_getInfo(*vecPtr);
     if(index >= vecInfo->size) return;
@@ -346,6 +371,7 @@ static void vec_swap_buff(vec_t* vecInfo, size_t index1, size_t index2, void* bu
     memcpy(vec_index(vecInfo, index2), buff, vecInfo->memSize);
 }
 
+// swap the elements at the given indexes
 void vec_swap(void* vec, size_t index1, size_t index2) {
     if(vec == NULL || index1 == index2) return;
     vec_t* vecInfo = vec_getInfo(vec);
@@ -353,6 +379,7 @@ void vec_swap(void* vec, size_t index1, size_t index2) {
 
     // the two possibility here avoid the need of a temp buffer
     // by writing the values directly to unused memory of the array
+    // see functions definitions for more details
     if(vecInfo->offset != 0) {
         vec_swap_front(vecInfo, index1, index2);
         return;
@@ -372,9 +399,11 @@ void vec_swap(void* vec, size_t index1, size_t index2) {
     deallocator(buff);
 }
 
+// remove all elements from the vector and set its size to 0
 void _vec_priv_clear(void** vecPtr) {
     if(vecPtr == NULL || *vecPtr == NULL) return;
     vec_t* vecInfo = vec_getInfo(*vecPtr);
+    // need to set size to 0 now because vec_resize copy the old array
     vecInfo->size = 0;
     vec_resize(vecInfo, 0);
     *vecPtr = vec_front(vecInfo);
@@ -388,6 +417,7 @@ void _vec_debug_print(void* vec, FILE* stream) {
     fprintf(stream, "effective memsize: %lu\n", SHIFT(vecInfo->baseSize) * vecInfo->memSize + sizeof(vec_t) + sizeof(vec_t*));
 }
 
+// preallocate the vector to the given size
 static void vec_reserve(vec_t* vec, size_t newSize) {
     if(newSize <= vec->baseSize) return;
     size_t newBaseSize = LOG2(newSize ? newSize : 1) + 1;
@@ -396,7 +426,7 @@ static void vec_reserve(vec_t* vec, size_t newSize) {
     }
 }
 
-
+// preallocates the vector to the given size and if resize is true set its size to the given size
 void vec_allocate(void* vecPtr, size_t newSize, int resize) {
     if(vecPtr == NULL || *(void**)vecPtr == NULL) return;
     vec_t* vecInfo = vec_getInfo(*(void**)vecPtr);
@@ -405,6 +435,7 @@ void vec_allocate(void* vecPtr, size_t newSize, int resize) {
     *(void**)vecPtr = vec_front(vecInfo);
 }
 
+// reverse the vector
 void vec_reverse(void* vec) {
     if(vec == NULL) return;
     vec_t* vecInfo = vec_getInfo(vec);
@@ -438,14 +469,17 @@ void vec_reverse(void* vec) {
     deallocator(buff);
 }
 
+// set theallocator function
 void vec_set_allocator(void* (*_allocator)(size_t)) {
     allocator = _allocator;
 }
 
+// set the deallocator function
 void vec_set_deallocator(void (*_deallocator)(void*)) {
     deallocator = _deallocator;
 }
 
+// set the comparator function for the vector
 void vec_setComparator(void* vec, int (*cmp)(const void*, const void*)) {
     if(vec == NULL) return;
     vec_t* vecInfo = vec_getInfo(vec);
@@ -455,6 +489,7 @@ void vec_setComparator(void* vec, int (*cmp)(const void*, const void*)) {
 // return the index where the value should be in a sorted arr,
 // this mean that if the value is not in the array, it should be at this index
 // if no cmp function return the length of the array and output an error to stderr
+// this is just a binary search
 static size_t vec_find_index(vec_t* vecInfo, const void* value) {
     if(vecInfo->cmp == NULL) {
         fprintf(stderr, "vec_find_index: no compare function set\n");
@@ -472,6 +507,8 @@ static size_t vec_find_index(vec_t* vecInfo, const void* value) {
     return i;
 }
 
+// insert the value at the right place to keep the array sorted
+// assume that the array is already sorted
 size_t _vec_priv_sortedInsert(void** vecPtr, void* value) {
     if(vecPtr == NULL || *vecPtr == NULL) return;
     vec_t* vecInfo = vec_getInfo(*vecPtr);
@@ -479,19 +516,19 @@ size_t _vec_priv_sortedInsert(void** vecPtr, void* value) {
     // if the value is not in the array, i is the index where it should be and no other check is needed
     // but if the value is in the array, we need to insert the new value after all occurences of the value
     if(vecInfo->cmp != NULL && vecInfo->cmp(vec_index(vecInfo, i), value) == 0) {
-        // TODO: optimize this, must be a better way to do this, this is linear search FGS...
         // found an equal value, now found the last one still equal
+        // TODO: optimize this, must be a better way to do this, this is linear search FGS...
         i++;
         while(i < vecInfo->size && vecInfo->cmp(vec_index(vecInfo, i), value) == 0) {
             i++;
         }
-        // insert the value after it
     }
     vec_insert(vecInfo, i, value);
     *vecPtr = vec_front(vecInfo);
     return i;
 }
 
+// return if the array is sorted, do a linear comparaison
 int vec_isSorted(const void* vec) {
     if(vec == NULL) return 1;
     const vec_t* vecInfo = vec_getInfo(vec);
