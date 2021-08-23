@@ -96,6 +96,7 @@ typedef struct {
     size_t size; // number of elem in vec
     size_t offset; // discarded element in front of the vec
     size_t memSize; // size of 1 element
+    int (*cmp)(const void*, const void*); // compare function
 } vec_t;
 
 static vec_t* vec_init(size_t memSize, size_t size) {
@@ -116,6 +117,7 @@ static vec_t* vec_init(size_t memSize, size_t size) {
     memcpy(baseArr, &vec, sizeof(vec_t*));
     vec->offset = 0;
     vec->memSize = memSize;
+    vec->cmp = NULL;
     return vec;
 }
 
@@ -238,6 +240,16 @@ void _vec_priv_popFront(void** vecPtr, void* buff) {
     if(vecInfo->size == 0) return;
     vec_popFront(vecInfo, buff);
     *vecPtr = vec_front(vecInfo);
+}
+
+void vec_sort(void* vec) {
+    if(vec == NULL) return;
+    vec_t* vecInfo = vec_getInfo(vec);
+    if(vecInfo->cmp == NULL) {
+        fprintf(stderr, "Error: vec_sort: no comparator set\n");
+        return;
+    }
+    qsort(vec_front(vecInfo), vecInfo->size, vecInfo->memSize, vecInfo->cmp);
 }
 
 void vec_qsort(void* vec, int (*compar_fn) (const void *, const void *)) {
@@ -414,3 +426,39 @@ void vec_set_allocator(void* (*_allocator)(size_t)) {
 void vec_set_deallocator(void (*_deallocator)(void*)) {
     deallocator = _deallocator;
 }
+
+void vec_setComparator(void* vec, int (*cmp)(const void*, const void*)) {
+    if(vec == NULL) return;
+    vec_t* vecInfo = vec_getInfo(vec);
+    vecInfo->cmp = cmp;
+}
+
+// return the index where the value should be in a sorted arr,
+// this mean that if the value is not in the array, it should be at this index
+// if no cmp function return the length of the array and output an error to stderr
+static size_t vec_find_index(vec_t* vecInfo, const void* value) {
+    if(vecInfo->cmp == NULL) {
+        fprintf(stderr, "vec_find_index: no compare function set\n");
+        return vecInfo->size;
+    }
+    size_t i = 0, j = vecInfo->size, m;
+    while(i < j) {
+        m = (i + j) / 2;
+        if(vecInfo->cmp(vec_index(vecInfo, m), value) < 0) {
+            i = m + 1;
+        } else {
+            j = m;
+        }
+    }
+    return i;
+}
+
+size_t _vec_priv_sortedInsert(void** vecPtr, void* value) {
+    if(vecPtr == NULL || *vecPtr == NULL) return;
+    vec_t* vecInfo = vec_getInfo(*vecPtr);
+    size_t i = vec_find_index(vecInfo, value);
+    vec_insert(vecInfo, i, value);
+    *vecPtr = vec_front(vecInfo);
+    return i;
+}
+

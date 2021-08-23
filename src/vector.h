@@ -118,6 +118,15 @@
         _vec_priv_clear((void**)_vecPtr); \
     }
 
+// insert an element in a already sorted array and keep it sorted
+// return the index of the element
+// need the comparator function to be set
+#define VEC_DEF_SORTEDINSERT(type, suffix) \
+    inline size_t vec_sortedInsert_##suffix(type** _vecPtr, type _value) { \
+        return _vec_priv_sortedInsert((void**)_vecPtr, &_value); \
+    }
+
+
 // commodity macro to define all functions
 #define VEC_DEF_ALL(type, suffix) \
     VEC_DEF_CREATE(type, suffix) \
@@ -192,7 +201,12 @@ void* vec_create(size_t memSize, size_t size);
 size_t vec_size(const void* vec);
 // free the array
 void vec_free(void* vec);
-// sort the array, just a wrapper for qsort
+/**
+ * sort the array, 
+ * just a wrapper for qsort
+ * if you plan to sort the array multiple times,
+ * set the comparator function with vec_setComparator() and use vec_sort()
+ */
 void vec_qsort(void* vec, int (*compar_fn) (const void *, const void *));
 // if resize is true :
 // allocate memory for newSize element and set the size to newSize
@@ -211,6 +225,13 @@ void vec_swap(void* vecPtr, size_t index1, size_t index2);
 void vec_set_allocator(void* (*_allocator)(size_t));
 // overwrite the deallocator function of the library, default is free
 void vec_set_deallocator(void (*_deallocator)(void*));
+// set a comparator function for the array
+// allowing to use function for sorted arrays
+void vec_setComparator(void* vec, int (*cmp)(const void*, const void*));
+// sort the array,
+// need the comparator function to be set
+// wrapper for qsort, which is not stable
+void vec_sort(void* vec);
 
 // private functions
 void _vec_priv_pushBack(void** vecPtr, void* value);
@@ -221,6 +242,7 @@ void* _vec_priv_slice(void* vec, size_t start, size_t end);
 void _vec_priv_insert(void** vecPtr, size_t index, void* value);
 void _vec_priv_remove(void** vecPtr, size_t index, void* buff);
 void _vec_priv_clear(void** vecPtr);
+size_t _vec_priv_sortedInsert(void** vecPtr, void* value);
 void _vec_debug_print(void* vec, FILE* stream); // write informations about the array to the given stream, for debug purpose
 
 #endif
