@@ -317,24 +317,30 @@ void _vec_priv_remove(void** vecPtr, size_t index, void*__restrict__ buff) {
     *vecPtr = vec_front(vecInfo);
 }
 
-// for the next 3 functions it assume that index1 and index2 are < vec->size and index1 != index2
+// the next 3 functions are private functions, so assumptions are made
+// it assume that index1 and index2 are < vec->size and index1 != index2
 // no need for memmove here as index1 and index2 are assumed different
 // so dest and src should not overlap
 // I'm wondering if inlining them could be a good idea
 
-void vec_swap_front(vec_t* vecInfo, size_t index1, size_t index2) {
+// use the unused space at the front of the vector as a temporary buffer
+// assume that offset > 0
+static void vec_swap_front(vec_t* vecInfo, size_t index1, size_t index2) {
     memcpy(vecInfo->baseArr, vec_index(vecInfo, index1), vecInfo->memSize);
     memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
     memcpy(vec_index(vecInfo, index2), vecInfo->baseArr, vecInfo->memSize);
 }
 
-void vec_swap_back(vec_t* vecInfo, size_t index1, size_t index2) {
+// use the unused space at the end of the vector as a temporary buffer
+// assume that the array is not full
+static void vec_swap_back(vec_t* vecInfo, size_t index1, size_t index2) {
     memcpy(vec_back(vecInfo), vec_index(vecInfo, index1), vecInfo->memSize);
     memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
     memcpy(vec_index(vecInfo, index2), vec_back(vecInfo), vecInfo->memSize);
 }
 
-void vec_swap_buff(vec_t* vecInfo, size_t index1, size_t index2, void* buff) {
+// assume that buff is of size memSize
+static void vec_swap_buff(vec_t* vecInfo, size_t index1, size_t index2, void* buff) {
     memcpy(buff, vec_index(vecInfo, index1), vecInfo->memSize);
     memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
     memcpy(vec_index(vecInfo, index2), buff, vecInfo->memSize);
@@ -473,6 +479,7 @@ size_t _vec_priv_sortedInsert(void** vecPtr, void* value) {
     // if the value is not in the array, i is the index where it should be and no other check is needed
     // but if the value is in the array, we need to insert the new value after all occurences of the value
     if(vecInfo->cmp != NULL && vecInfo->cmp(vec_index(vecInfo, i), value) == 0) {
+        // TODO: optimize this, must be a better way to do this, this is linear search FGS...
         // found an equal value, now found the last one still equal
         i++;
         while(i < vecInfo->size && vecInfo->cmp(vec_index(vecInfo, i), value) == 0) {
