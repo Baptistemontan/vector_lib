@@ -232,6 +232,9 @@ void vec_setComparator(void* vec, int (*cmp)(const void*, const void*));
 // need the comparator function to be set
 // wrapper for qsort, which is not stable
 void vec_sort(void* vec);
+// return if the array is sorted
+// need the comparator function to be set
+int vec_isSorted(const void* vec);
 
 // private functions
 void _vec_priv_pushBack(void** vecPtr, void* value);

@@ -475,3 +475,18 @@ size_t _vec_priv_sortedInsert(void** vecPtr, void* value) {
     return i;
 }
 
+int vec_isSorted(const void* vec) {
+    if(vec == NULL) return 1;
+    const vec_t* vecInfo = vec_getInfo(vec);
+    if(vecInfo->cmp == NULL) {
+        fprintf(stderr, "vec_isSorted: no compare function set\n");
+        return 0;
+    }
+    for(size_t i = 1; i < vecInfo->size; i++) {
+        if(vecInfo->cmp(vec_index(vecInfo, i - 1), vec_index(vecInfo, i)) > 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
