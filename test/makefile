@@ -19,4 +19,4 @@ vector.o:
 	$(CC) $(CFLAGS) -o $@ -c $< $(FLAGS)
 
 rmproper:
-	rm -f $(OBJ) $(EXEC)
+	rm -f $(OBJ) $(EXEC) vector.o
