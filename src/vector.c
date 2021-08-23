@@ -268,26 +268,39 @@ void* _vec_priv_slice(void* vec, size_t start, size_t end) {
     return newArr;
 }
 
-static void vec_insert(vec_t* vec, size_t index, void* value) {
-    if(index > vec->size) return;
-    vec_extend(vec);
+static void vec_insert(vec_t* vecInfo, size_t index, void* value) {
+    if(index > vecInfo->size) return;
+    // if index is at the end, just pushBack
+    if(index >= vecInfo->size) {
+        vec_pushBack(vecInfo, value);
+        return;
+    }
+    // if at the front pushFront
+    if(index == 0) {
+        vec_pushFront(vecInfo, value);
+        return;
+    }
+    vec_extend(vecInfo);
     // need memmove here because everything is moved over itself by one element
-    memmove(vec_index(vec, index + 1), vec_index(vec, index), (vec->size - index) * vec->memSize);
-    memcpy(vec_index(vec, index), value, vec->memSize);
-    vec->size++;
+
+    // case where less elements are at the left of the index and offset != 0
+    if(index < vecInfo->size - index && vecInfo->offset > 0) {
+        // move everything at the left of the index to the left by one element
+        // can access index -1 as offset is > 0
+        memmove(vec_index(vecInfo, -1), vec_front(vecInfo), index * vecInfo->memSize);
+        vecInfo->offset--;
+    } else { 
+        // move everything at the right of the index to the right by one element
+        memmove(vec_index(vecInfo, index + 1), vec_index(vecInfo, index), (vecInfo->size - index) * vecInfo->memSize);
+    }
+    // insert the value
+    memcpy(vec_index(vecInfo, index), value, vecInfo->memSize);
+    vecInfo->size++;
 }
 
 void _vec_priv_insert(void** vecPtr, size_t index, void* value) {
     if(vecPtr == NULL || *vecPtr == NULL) return;
     vec_t* vecInfo = vec_getInfo(*vecPtr);
-    if(index >= vecInfo->size) {
-        vec_pushBack(vecInfo, value);
-        return;
-    }
-    if(index == 0) {
-        vec_pushFront(vecInfo, value);
-        return;
-    }
     vec_insert(vecInfo, index, value);
     *vecPtr = vec_front(vecInfo);
 }
