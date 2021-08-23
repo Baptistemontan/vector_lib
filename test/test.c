@@ -1,4 +1,3 @@
-#include "../src/vector.h"
 #include "test.h"
 
 #define TESTSIZE (size_t)100
