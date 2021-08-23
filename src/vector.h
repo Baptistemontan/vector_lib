@@ -140,6 +140,7 @@
     VEC_DEF_REMOVE(type, suffix) \
     VEC_DEF_BSEARCH(type, suffix) \
     VEC_DEF_CLEAR(type, suffix) \
+    VEC_DEF_SORTEDINSERT(type, suffix) \
 
 // map function is not inlined
 // so it will define a function that will be compiled.
