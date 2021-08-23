@@ -86,13 +86,13 @@
 static void*(*allocator)(size_t) = malloc;
 static void(*deallocator)(void*) = free;
 
-// size_t for everything is kinda overkill but meh,
-// struct is 40 bytes and storing the adress is 8 more
-// thats a total of 48 bytes per array to store info
-// thats the size of an array of 12 int.
+// the size of the array is 2^(baseSize) and should be able to be stored in a size_t
+// so baseSize can't be bigger than sizeof(size_t) * 8
+// so baseSize should'nt be bigger than 64
+// so can be easily stored in 1 byte, therefore a unsigned char is enough
 typedef struct {
     void* baseArr; // adress of the allocated array
-    size_t baseSize; // log2 of the allocated size for the array
+    unsigned char baseSize; // log2 of the allocated size for the array
     size_t size; // number of elem in vec
     size_t offset; // discarded element in front of the vec
     size_t memSize; // size of 1 element
@@ -292,35 +292,52 @@ void _vec_priv_remove(void** vecPtr, size_t index, void*__restrict__ buff) {
     *vecPtr = vec_front(vecInfo);
 }
 
+// for the next 3 functions it assume that index1 and index2 are < vec->size and index1 != index2
+// no need for memmove here as index1 and index2 are assumed different
+// so dest and src should not overlap
+// I'm wondering if inlining them could be a good idea
+
+void vec_swap_front(vec_t* vecInfo, size_t index1, size_t index2) {
+    memcpy(vecInfo->baseArr, vec_index(vecInfo, index1), vecInfo->memSize);
+    memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
+    memcpy(vec_index(vecInfo, index2), vecInfo->baseArr, vecInfo->memSize);
+}
+
+void vec_swap_back(vec_t* vecInfo, size_t index1, size_t index2) {
+    memcpy(vec_back(vecInfo), vec_index(vecInfo, index1), vecInfo->memSize);
+    memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
+    memcpy(vec_index(vecInfo, index2), vec_back(vecInfo), vecInfo->memSize);
+}
+
+void vec_swap_buff(vec_t* vecInfo, size_t index1, size_t index2, void* buff) {
+    memcpy(buff, vec_index(vecInfo, index1), vecInfo->memSize);
+    memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
+    memcpy(vec_index(vecInfo, index2), buff, vecInfo->memSize);
+}
+
 void vec_swap(void* vec, size_t index1, size_t index2) {
     if(vec == NULL || index1 == index2) return;
     vec_t* vecInfo = vec_getInfo(vec);
     if(index1 >= vecInfo->size || index2 >= vecInfo->size) return;
-    // no need for memmove here as index1 and index2 are always different
-    // so dest and src can't overlap
 
     // the two possibility here avoid the need of a temp buffer
     // by writing the values directly to unused memory of the array
     if(vecInfo->offset != 0) {
-        memcpy(vecInfo->baseArr, vec_index(vecInfo, index1), vecInfo->memSize);
-        memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
-        memcpy(vec_index(vecInfo, index2), vecInfo->baseArr, vecInfo->memSize);
+        vec_swap_front(vecInfo, index1, index2);
         return;
     } else if(SHIFT(vecInfo->baseSize) > vecInfo->size) {
-        memcpy(vec_back(vecInfo), vec_index(vecInfo, index1), vecInfo->memSize);
-        memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
-        memcpy(vec_index(vecInfo, index2), vec_back(vecInfo), vecInfo->memSize);
+        vec_swap_back(vecInfo, index1, index2);
         return;
     }
+
+    // maybe allocating the buffer to the stack could be an optimization
 
     void* buff = allocator(vecInfo->memSize);
     if(buff == NULL) {
         fprintf(stderr, "vec_swap: buffer malloc failed, requested size: %zu\n", vecInfo->memSize);
         return;
     }
-    memcpy(buff, vec_index(vecInfo, index1), vecInfo->memSize);
-    memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
-    memcpy(vec_index(vecInfo, index2), buff, vecInfo->memSize);
+    vec_swap_buff(vecInfo, index1, index2, buff);
     deallocator(buff);
 }
 
@@ -368,28 +385,24 @@ void vec_reverse(void* vec) {
     // by writing the values directly to the array
     if(vecInfo->offset != 0) {
         for(size_t i = 0, j = vecInfo->size - 1; i < j; i++, j--) {
-            memcpy(vecInfo->baseArr, vec_index(vecInfo, i), vecInfo->memSize);
-            memcpy(vec_index(vecInfo, i), vec_index(vecInfo, j), vecInfo->memSize);
-            memcpy(vec_index(vecInfo, j), vecInfo->baseArr, vecInfo->memSize);
+            vec_swap_front(vecInfo, i, j);
         }
         return;
     } else if(SHIFT(vecInfo->baseSize) > vecInfo->size) {
         for(size_t i = 0, j = vecInfo->size - 1; i < j; i++, j--) {
-            memcpy(vec_back(vecInfo), vec_index(vecInfo, i), vecInfo->memSize);
-            memcpy(vec_index(vecInfo, i), vec_index(vecInfo, j), vecInfo->memSize);
-            memcpy(vec_index(vecInfo, j), vec_back(vecInfo), vecInfo->memSize);
+            vec_swap_back(vecInfo, i, j);
         }
         return;
     }
+
+    // same as vec_swap, maybe allocating the buffer to the stack
     void* buff = allocator(vecInfo->memSize);
     if(buff == NULL) {
         fprintf(stderr, "vec_reverse: buffer malloc failed, requested size: %zu\n", vecInfo->memSize);
         return;
     }
     for(size_t i = 0, j = vecInfo->size - 1; i < j; i++, j--) {
-        memcpy(buff, vec_index(vecInfo, i), vecInfo->memSize);
-        memcpy(vec_index(vecInfo, i), vec_index(vecInfo, j), vecInfo->memSize);
-        memcpy(vec_index(vecInfo, j), buff, vecInfo->memSize);
+        vec_swap_buff(vecInfo, i, j, buff);
     }
     deallocator(buff);
 }
