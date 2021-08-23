@@ -413,7 +413,7 @@ void _vec_priv_clear(void** vecPtr) {
 void _vec_debug_print(void* vec, FILE* stream) {
     if(vec == NULL) return;
     vec_t* vecInfo = vec_getInfo(vec);
-    fprintf(stream, "size: %lu, offset: %lu, memSize: %lu, baseSize: %lu\n", vecInfo->size, vecInfo->offset, vecInfo->memSize, vecInfo->baseSize);
+    fprintf(stream, "size: %lu, offset: %lu, memSize: %lu, baseSize: %u\n", vecInfo->size, vecInfo->offset, vecInfo->memSize, vecInfo->baseSize);
     fprintf(stream, "effective memsize: %lu\n", SHIFT(vecInfo->baseSize) * vecInfo->memSize + sizeof(vec_t) + sizeof(vec_t*));
 }
 
@@ -486,19 +486,16 @@ void vec_setComparator(void* vec, int (*cmp)(const void*, const void*)) {
     vecInfo->cmp = cmp;
 }
 
-// return the index where the value should be in a sorted arr,
-// this mean that if the value is not in the array, it should be at this index
-// if no cmp function return the length of the array and output an error to stderr
-// this is just a binary search
-static size_t vec_find_index(vec_t* vecInfo, const void* value) {
+// return the index where the element should be inserted to keep the vector sorted
+static size_t vec_find_sorted_insertion(const vec_t* vecInfo, const void* value) {
     if(vecInfo->cmp == NULL) {
-        fprintf(stderr, "vec_find_index: no compare function set\n");
+        fprintf(stderr, "vec_find_sorted_insertion: no compare function set\n");
         return vecInfo->size;
     }
     size_t i = 0, j = vecInfo->size, m;
     while(i < j) {
         m = (i + j) / 2;
-        if(vecInfo->cmp(vec_index(vecInfo, m), value) < 0) {
+        if(vecInfo->cmp(vec_index(vecInfo, m), value) <= 0) {
             i = m + 1;
         } else {
             j = m;
@@ -510,19 +507,9 @@ static size_t vec_find_index(vec_t* vecInfo, const void* value) {
 // insert the value at the right place to keep the array sorted
 // assume that the array is already sorted
 size_t _vec_priv_sortedInsert(void** vecPtr, void* value) {
-    if(vecPtr == NULL || *vecPtr == NULL) return;
+    if(vecPtr == NULL || *vecPtr == NULL) return 0;
     vec_t* vecInfo = vec_getInfo(*vecPtr);
-    size_t i = vec_find_index(vecInfo, value);
-    // if the value is not in the array, i is the index where it should be and no other check is needed
-    // but if the value is in the array, we need to insert the new value after all occurences of the value
-    if(vecInfo->cmp != NULL && vecInfo->cmp(vec_index(vecInfo, i), value) == 0) {
-        // found an equal value, now found the last one still equal
-        // TODO: optimize this, must be a better way to do this, this is linear search FGS...
-        i++;
-        while(i < vecInfo->size && vecInfo->cmp(vec_index(vecInfo, i), value) == 0) {
-            i++;
-        }
-    }
+    size_t i = vec_find_sorted_insertion(vecInfo, value);
     vec_insert(vecInfo, i, value);
     *vecPtr = vec_front(vecInfo);
     return i;
