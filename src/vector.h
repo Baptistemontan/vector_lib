@@ -121,6 +121,7 @@
 // insert an element in a already sorted array and keep it sorted
 // return the index of the element
 // need the comparator function to be set
+// if multiple elements are equal to the value, insert element at last position
 #define VEC_DEF_SORTEDINSERT(type, suffix) \
     inline size_t vec_sortedInsert_##suffix(type** _vecPtr, type _value) { \
         return _vec_priv_sortedInsert((void**)_vecPtr, &_value); \

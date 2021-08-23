@@ -470,6 +470,16 @@ size_t _vec_priv_sortedInsert(void** vecPtr, void* value) {
     if(vecPtr == NULL || *vecPtr == NULL) return;
     vec_t* vecInfo = vec_getInfo(*vecPtr);
     size_t i = vec_find_index(vecInfo, value);
+    // if the value is not in the array, i is the index where it should be and no other check is needed
+    // but if the value is in the array, we need to insert the new value after all occurences of the value
+    if(vecInfo->cmp != NULL && vecInfo->cmp(vec_index(vecInfo, i), value) == 0) {
+        // found an equal value, now found the last one still equal
+        i++;
+        while(i < vecInfo->size && vecInfo->cmp(vec_index(vecInfo, i), value) == 0) {
+            i++;
+        }
+        // insert the value after it
+    }
     vec_insert(vecInfo, i, value);
     *vecPtr = vec_front(vecInfo);
     return i;
