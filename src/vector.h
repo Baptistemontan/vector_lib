@@ -32,6 +32,9 @@
  * functions can be defined individually, but VEC_DEF_ALL() define all the functions at once.
  * 
  * You also can overwrite allocator and deallocator functions to use custom ones. 
+ * 
+ * if you intend to store large type, I would advice you to store them as pointers, as moving them
+ * around in memory will be less expensive.
  */
 
 // return an array of the given type that can be accessed like a normal array
