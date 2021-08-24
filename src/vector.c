@@ -84,6 +84,29 @@
 #define vec_back(vec) ((vec)->baseArr + (((vec)->offset + (vec)->size) * (vec)->memSize))
 #define vec_index(vec, i) ((vec)->baseArr + (((vec)->offset + (i)) * (vec)->memSize))
 #define vec_indexFromBack(vec, i) ((vec)->baseArr + (((vec)->offset + (vec)->size - (i)) * (vec)->memSize))
+// the next 3 macros are made based on assumpttions:
+// it assume that index1 and index2 are < vec->size and index1 != index2
+// no need for memmove here as index1 and index2 are assumed different
+// so dest and src should not overlap
+
+// use the unused space at the front of the vector as a temporary buffer
+// assume that offset > 0
+#define vec_swap_front(vecInfo, index1, index2) \
+    memcpy((vecInfo)->baseArr, vec_index(vecInfo, index1), (vecInfo)->memSize); \
+    memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), (vecInfo)->memSize); \
+    memcpy(vec_index(vecInfo, index2), (vecInfo)->baseArr, (vecInfo)->memSize); \
+// use the unused space at the end of the vector as a temporary buffer
+// assume that the array is not full
+#define vec_swap_back(vecInfo, index1, index2) \
+    memcpy(vec_back(vecInfo), vec_index(vecInfo, index1), (vecInfo)->memSize); \
+    memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), (vecInfo)->memSize); \
+    memcpy(vec_index(vecInfo, index2), vec_back(vecInfo), (vecInfo)->memSize); \
+// assume that buff is of size memSize
+#define vec_swap_buff(vecInfo, index1, index2, buff) \
+    memcpy((buff), vec_index(vecInfo, index1), (vecInfo)->memSize); \
+    memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), (vecInfo)->memSize); \
+    memcpy(vec_index(vecInfo, index2), (buff), (vecInfo)->memSize); \
+
 
 static void*(*allocator)(size_t) = malloc;
 static void(*deallocator)(void*) = free;
@@ -143,6 +166,7 @@ static void vec_resize(vec_t* vec, size_t newBaseSize) {
 // check if the array need to be expanded,
 // if so, double its size
 static void vec_extend(vec_t* vec) {
+    // if size + offset is less than the effective size of the array, do nothing
     if(vec->size + vec->offset < SHIFT(vec->baseSize)) return;
     size_t newBaseSize = vec->baseSize + 1;
     vec_resize(vec, newBaseSize);
@@ -151,6 +175,7 @@ static void vec_extend(vec_t* vec) {
 // check if the array need to be shrinked,
 // if so, halve its size
 static void vec_shrink(vec_t* vec) {
+    // if baseSize = 0 or size * 2 is greater than the effective size of the array, do nothing
     if(vec->baseSize == 0) return;
     if(vec->size * 2 > SHIFT(vec->baseSize)) return;
     size_t newBaseSize = vec->baseSize - 1;
@@ -342,34 +367,6 @@ void _vec_priv_remove(void** vecPtr, size_t index, void* buff) {
     *vecPtr = vec_front(vecInfo);
 }
 
-// the next 3 functions are private functions, so assumptions are made
-// it assume that index1 and index2 are < vec->size and index1 != index2
-// no need for memmove here as index1 and index2 are assumed different
-// so dest and src should not overlap
-// I'm wondering if inlining them could be a good idea
-
-// use the unused space at the front of the vector as a temporary buffer
-// assume that offset > 0
-static void vec_swap_front(vec_t* vecInfo, size_t index1, size_t index2) {
-    memcpy(vecInfo->baseArr, vec_index(vecInfo, index1), vecInfo->memSize);
-    memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
-    memcpy(vec_index(vecInfo, index2), vecInfo->baseArr, vecInfo->memSize);
-}
-
-// use the unused space at the end of the vector as a temporary buffer
-// assume that the array is not full
-static void vec_swap_back(vec_t* vecInfo, size_t index1, size_t index2) {
-    memcpy(vec_back(vecInfo), vec_index(vecInfo, index1), vecInfo->memSize);
-    memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
-    memcpy(vec_index(vecInfo, index2), vec_back(vecInfo), vecInfo->memSize);
-}
-
-// assume that buff is of size memSize
-static void vec_swap_buff(vec_t* vecInfo, size_t index1, size_t index2, void* buff) {
-    memcpy(buff, vec_index(vecInfo, index1), vecInfo->memSize);
-    memcpy(vec_index(vecInfo, index1), vec_index(vecInfo, index2), vecInfo->memSize);
-    memcpy(vec_index(vecInfo, index2), buff, vecInfo->memSize);
-}
 
 // swap the elements at the given indexes
 void vec_swap(void* vec, size_t index1, size_t index2) {
@@ -493,6 +490,13 @@ static size_t vec_find_sorted_insertion(const vec_t* vecInfo, const void* value)
         return vecInfo->size;
     }
     size_t i = 0, j = vecInfo->size, m;
+    // don't search an equal value, but rather the insertion point
+    // loop until finding m such as
+    // the value at index m - 1 is smaller or equal to the value
+    // and the value at index m is greater to the value
+    // in case value is the smallest value, the insertion point is 0
+    // in case value is the largest value, the insertion point is vecInfo->size
+    // this is not that much more heavy work, as it will just always reach worst case scenario of a "normal" bsearch
     while(i < j) {
         m = (i + j) / 2;
         if(vecInfo->cmp(vec_index(vecInfo, m), value) <= 0) {
