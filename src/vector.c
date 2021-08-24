@@ -3,76 +3,6 @@
 #include <string.h>
 #include <stdio.h>
 
-/**
- * 
- * TLDR: I'm doing black magic in C, and it work better than it should.
- * 
- * 
- * I will try to explain the inner workings of this code, which is pure black magic,
- * and will surely make some people mad.
- * (first thing, the struct vec_t contain the infos about the vector.)
- * When I tried to design this lib for the first time, 
- * I gave back the struct to the user and he add to access an array in the struct
- * But it was not practical, and I wanted to just do vec[i] = x, and not vec.arr[i] = x
- * so I gave back the array to the user and he can access it with the [] operator.
- * but now, how do I access the info when the user want to push item or the size?
- * well at first I've done the most stupid things that came to my mind, 
- * I just created an array that store the infos of all the current vec, 
- * and do a bsearch when I need to access the info of a vec.
- * so as you can imagine, I need to sort the array everytime the vec address change,
- * so most of the workload was sorting and searching in an array.
- * but now, I use some address pointers tricks to make it more efficient.
- * when I allocate the memory for the array, I also allocate the size of an address to the struct vec_t
- * so instead of allocating size * memSize, I allocate size * memSize + sizeof(vec_t*)
- * and I give back the address, but shifted of sizeof(vec_t*)
- * so when the user use functions on the vector, I just shift it back to retrieve the address
- * (see macro vec_getInfo(vec))
- * I don't know if its the best, if it's really safe, but it works, and it's fast, 
- * and it's very convenient, for the user and for me.
- * 
- * user could use the "privates" functions of the library, but the prefered way is to define wrapper functions.
- * macros to define them are defines in the header file.
- * most of the functions are inlined so it does'nt create actual functions, and can be defined in multiple files
- * without creating the same function multiple times, 
- * and the compiler can optimize them as they are very small wrappers.
- * 
- * An other thing, I'm not an expert in dynammic arrays, so I just implemented
- * a logic I came accross one time, and I've done it the way that seams the best for me.
- * in vect_t, the property baseSize is an power of 2 of the actual size of the array,
- * so the array size is 2^(baseSize)
- * yes this means that there is unused memory in the array, but this make insertion and deletion
- * fast as they are now O(log(n)) instead of O(n))
- * (I speak in term of reallocation, which mean copying the array, only log2(n) times instead of n times)
- * I also heard about the fact that computer likes to always be propare that functions are gonna be call multiple
- * so when the user push to the front, if their is no space at the front, I move the array to the back,
- * not just of one element, but of the whole array.
- * I do the smae thing when the user push to the back, I just move the array to the front, setting the offset to 0.
- * This whole logic is done in vec_expand() and vec_shrink(), which are just wrappers for vec_resize().
- * no other functions than vec_resize() should resize, only move memory.
- * all function that insert element in the vector call vec_expand(),
- * and all function that remove element from the vector call vec_shrink().
- * this insure that the array is always in the right size.
- * the only function that can oversize the array is vec_reserve() (which is also a wrapper for vec_resize())
- * 
- * some macro are defined to access part of the array, see vec_: front, back, index, indexFromBack
- * defined to make the code more readeable when moving memory around.
- * 
- * functions that intend to modify the vec size take the vec address as first argument,
- * that way the memory address of the arr can be replaced by the new one if the array is resized.
- * so all these function finish by *vecPtr = vec_front(vecInfo)
- * 
- * 
- * I hope the code is not too hard to understand, I try to keep it as clean as possible,
- * but this is difficult has it's mostly memory movement.
- * this lib is just me tweaking around in C to improve myself,
- * I'm sure most of the functions could be written in a better way and more optimized,
- * If you see any improvement, please let me know.
- * 
- * Thanks for reading,
- * have a nice day,
- * Baptiste de Montangon.
- */
-
 #define SHIFT(n) ((size_t)1 << n) // fast 2^n
 // this come from stackoverflow, I don't know how it works, but it works
 // carefull, return the biggest power of 2 that is smaller than n, 
@@ -535,3 +465,72 @@ int vec_isSorted(const void* vec) {
     return 1;
 }
 
+/**
+ * 
+ * TLDR: I'm doing black magic in C, and it work better than it should.
+ * 
+ * 
+ * I will try to explain the inner workings of this code, which is pure black magic,
+ * and will surely make some people mad.
+ * (first thing, the struct vec_t contain the infos about the vector.)
+ * When I tried to design this lib for the first time, 
+ * I gave back the struct to the user and he add to access an array in the struct
+ * But it was not practical, and I wanted to just do vec[i] = x, and not vec.arr[i] = x
+ * so I gave back the array to the user and he can access it with the [] operator.
+ * but now, how do I access the info when the user want to push item or the size?
+ * well at first I've done the most stupid things that came to my mind, 
+ * I just created an array that store the infos of all the current vec, 
+ * and do a bsearch when I need to access the info of a vec.
+ * so as you can imagine, I need to sort the array everytime the vec address change,
+ * so most of the workload was sorting and searching in an array.
+ * but now, I use some address pointers tricks to make it more efficient.
+ * when I allocate the memory for the array, I also allocate the size of an address to the struct vec_t
+ * so instead of allocating size * memSize, I allocate size * memSize + sizeof(vec_t*)
+ * and I give back the address, but shifted of sizeof(vec_t*)
+ * so when the user use functions on the vector, I just shift it back to retrieve the address
+ * (see macro vec_getInfo(vec))
+ * I don't know if its the best, if it's really safe, but it works, and it's fast, 
+ * and it's very convenient, for the user and for me.
+ * 
+ * user could use the "privates" functions of the library, but the prefered way is to define wrapper functions.
+ * macros to define them are defines in the header file.
+ * most of the functions are inlined so it does'nt create actual functions, and can be defined in multiple files
+ * without creating the same function multiple times, 
+ * and the compiler can optimize them as they are very small wrappers.
+ * 
+ * An other thing, I'm not an expert in dynammic arrays, so I just implemented
+ * a logic I came accross one time, and I've done it the way that seams the best for me.
+ * in vect_t, the property baseSize is an power of 2 of the actual size of the array,
+ * so the array size is 2^(baseSize)
+ * yes this means that there is unused memory in the array, but this make insertion and deletion
+ * fast as they are now O(log(n)) instead of O(n))
+ * (I speak in term of reallocation, which mean copying the array, only log2(n) times instead of n times)
+ * I also heard about the fact that computer likes to always be propare that functions are gonna be call multiple
+ * so when the user push to the front, if their is no space at the front, I move the array to the back,
+ * not just of one element, but of the whole array.
+ * I do the smae thing when the user push to the back, I just move the array to the front, setting the offset to 0.
+ * This whole logic is done in vec_expand() and vec_shrink(), which are just wrappers for vec_resize().
+ * no other functions than vec_resize() should resize, only move memory.
+ * all function that insert element in the vector call vec_expand(),
+ * and all function that remove element from the vector call vec_shrink().
+ * this insure that the array is always in the right size.
+ * the only function that can oversize the array is vec_reserve() (which is also a wrapper for vec_resize())
+ * 
+ * some macro are defined to access part of the array, see vec_: front, back, index, indexFromBack
+ * defined to make the code more readeable when moving memory around.
+ * 
+ * functions that intend to modify the vec size take the vec address as first argument,
+ * that way the memory address of the arr can be replaced by the new one if the array is resized.
+ * so all these function finish by *vecPtr = vec_front(vecInfo)
+ * 
+ * 
+ * I hope the code is not too hard to understand, I try to keep it as clean as possible,
+ * but this is difficult has it's mostly memory movement.
+ * this lib is just me tweaking around in C to improve myself,
+ * I'm sure most of the functions could be written in a better way and more optimized,
+ * If you see any improvement, please let me know.
+ * 
+ * Thanks for reading,
+ * have a nice day,
+ * Baptiste de Montangon.
+ */
